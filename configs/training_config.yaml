@@ -1,0 +1,24 @@
+seed: 42
+
+data:
+  dataset_name: cifar10  # cifar10 | fashion_mnist
+  data_dir: ./data
+  num_workers: 0
+  download: true
+  # image_size: 224  # optional; defaults to native size for simple_cnn, 224 for resnet18
+
+model:
+  architecture: simple_cnn  # simple_cnn | resnet18
+  num_classes: 10
+  pretrained: false
+
+training:
+  epochs: 10
+  batch_size: 64
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  early_stopping_patience: 3
+
+output:
+  checkpoint_dir: ./checkpoints
+  model_name: model.pt
