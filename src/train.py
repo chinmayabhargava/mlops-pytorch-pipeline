@@ -34,10 +34,15 @@ def load_config(config_path: str) -> dict:
 def resolve_config_path(cli_path: str | None = None) -> Path:
     if cli_path:
         path = Path(cli_path)
+        if not path.is_absolute():
+            if (Path.cwd() / path).exists():
+                path = Path.cwd() / path
+            elif (ROOT / path).exists():
+                path = ROOT / path
         if not path.exists():
-            raise FileNotFoundError(f"Config not found: {path}")
-        return path
-    for candidate in (Path("/app/configs/training_config.yaml"), Path("configs/training_config.yaml")):
+            raise FileNotFoundError(f"Config not found: {cli_path}")
+        return path.resolve()
+    for candidate in (Path("/app/configs/training_config.yaml"), ROOT / "configs" / "training_config.yaml"):
         if candidate.exists():
             return candidate
     raise FileNotFoundError(
@@ -51,18 +56,27 @@ def set_seed(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
+def resolve_under_root(path: str | Path) -> Path:
+    """Resolve relative paths against the project root, not the current working directory."""
+    p = Path(path)
+    return p if p.is_absolute() else (ROOT / p)
+
+
 def train_one_epoch(
     model: nn.Module,
     loader: torch.utils.data.DataLoader,
     optimizer: torch.optim.Optimizer,
     criterion: nn.Module,
     device: torch.device,
+    max_batches: int | None = None,
 ) -> tuple[float, float]:
     model.train()
     total_loss = 0.0
     correct = 0
     total = 0
-    for inputs, targets in loader:
+    for batch_idx, (inputs, targets) in enumerate(loader):
+        if max_batches is not None and batch_idx >= max_batches:
+            break
         inputs, targets = inputs.to(device), targets.to(device)
         optimizer.zero_grad()
         outputs = model(inputs)
@@ -84,12 +98,15 @@ def evaluate(
     loader: torch.utils.data.DataLoader,
     criterion: nn.Module,
     device: torch.device,
+    max_batches: int | None = None,
 ) -> tuple[float, float]:
     model.eval()
     total_loss = 0.0
     correct = 0
     total = 0
-    for inputs, targets in loader:
+    for batch_idx, (inputs, targets) in enumerate(loader):
+        if max_batches is not None and batch_idx >= max_batches:
+            break
         inputs, targets = inputs.to(device), targets.to(device)
         outputs = model(inputs)
         loss = criterion(outputs, targets)
@@ -127,6 +144,13 @@ def save_checkpoint(
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Train an image classifier.")
     parser.add_argument("--config", default=None, help="Path to training_config.yaml")
+    parser.add_argument("--epochs", type=int, default=None, help="Override training.epochs")
+    parser.add_argument(
+        "--max-batches",
+        type=int,
+        default=None,
+        help="Limit train/val batches per epoch (useful for a smoke run)",
+    )
     args = parser.parse_args(argv)
 
     config_path = resolve_config_path(args.config)
@@ -161,7 +185,7 @@ def main(argv: list[str] | None = None) -> None:
     ).to(device)
 
     train_loader, val_loader = get_dataloaders(
-        data_dir=data_cfg.get("data_dir", "./data"),
+        data_dir=str(resolve_under_root(data_cfg.get("data_dir", "./data"))),
         batch_size=int(train_cfg.get("batch_size", 64)),
         num_workers=int(data_cfg.get("num_workers", 0)),
         dataset_name=dataset_name,
@@ -181,9 +205,12 @@ def main(argv: list[str] | None = None) -> None:
     best_val_loss = float("inf")
     patience_counter = 0
     patience = int(train_cfg.get("early_stopping_patience", 5))
-    checkpoint_dir = Path(output_cfg.get("checkpoint_dir", "./checkpoints"))
+    checkpoint_dir = resolve_under_root(output_cfg.get("checkpoint_dir", "./checkpoints"))
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     save_path = checkpoint_dir / output_cfg.get("model_name", "model.pt")
+    max_batches = args.max_batches if args.max_batches is not None else train_cfg.get("max_batches")
+    if max_batches is not None:
+        max_batches = int(max_batches)
 
     checkpoint_meta = {
         "architecture": architecture,
@@ -194,12 +221,14 @@ def main(argv: list[str] | None = None) -> None:
         "classes": classes,
     }
 
-    epochs = int(train_cfg.get("epochs", 10))
+    epochs = int(args.epochs if args.epochs is not None else train_cfg.get("epochs", 10))
     for epoch in range(epochs):
         train_loss, train_acc = train_one_epoch(
-            model, train_loader, optimizer, criterion, device
+            model, train_loader, optimizer, criterion, device, max_batches=max_batches
         )
-        val_loss, val_acc = evaluate(model, val_loader, criterion, device)
+        val_loss, val_acc = evaluate(
+            model, val_loader, criterion, device, max_batches=max_batches
+        )
         print(
             json.dumps(
                 {

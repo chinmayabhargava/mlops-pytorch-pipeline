@@ -100,6 +100,20 @@ def test_train_transforms_include_augmentation():
     assert len(train_t.transforms) > len(eval_t.transforms)
 
 
+def test_train_one_epoch_respects_max_batches():
+    model = SimpleCNN(in_channels=3, num_classes=10)
+    x = torch.randn(16, 3, 32, 32)
+    y = torch.randint(0, 10, (16,))
+    loader = DataLoader(TensorDataset(x, y), batch_size=4)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    criterion = nn.CrossEntropyLoss()
+    loss, acc = train_one_epoch(
+        model, loader, optimizer, criterion, torch.device("cpu"), max_batches=1
+    )
+    assert loss >= 0
+    assert 0.0 <= acc <= 1.0
+
+
 def test_train_one_epoch_and_evaluate():
     model = SimpleCNN(in_channels=3, num_classes=10)
     x = torch.randn(8, 3, 32, 32)

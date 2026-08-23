@@ -1,1 +1,12 @@
 src/Todo.txt
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.venv/
+venv/
+data/
+checkpoints/
+*.egg-info/
+.mypy_cache/
+.ruff_cache/

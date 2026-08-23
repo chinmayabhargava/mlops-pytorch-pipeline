@@ -22,6 +22,7 @@ import io
 import os
 import sys
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Dict, List
 
 import torch
@@ -31,14 +32,20 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from PIL import Image
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from src.dataset import get_eval_transform
 from src.model import get_model
 
 
 def _checkpoint_path() -> str:
-    return os.environ.get("MODEL_CHECKPOINT_PATH", "./checkpoints/model.pt")
+    raw = os.environ.get("MODEL_CHECKPOINT_PATH", "checkpoints/model.pt")
+    path = Path(raw)
+    if not path.is_absolute():
+        path = ROOT / path
+    return str(path)
 
 
 # Holds the loaded model + preprocessing pipeline. Populated at startup by load_model().
