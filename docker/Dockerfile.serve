@@ -1,0 +1,59 @@
+# syntax=docker/dockerfile:1
+
+########################################
+# Stage 1: Builder — install inference-only deps into a venv
+########################################
+FROM python:3.11-slim AS builder
+
+ENV PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Inference-only requirements — no tensorboard, no training-only libs
+COPY requirements/serve.txt .
+RUN pip install --no-cache-dir -r serve.txt
+
+########################################
+# Stage 2: Serving runtime — slim, no compilers, non-root
+########################################
+FROM python:3.11-slim AS serving
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/opt/venv/bin:$PATH"
+
+WORKDIR /app
+
+# curl is required for the HEALTHCHECK probe below
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system app \
+    && useradd --system --gid app --home /app --shell /usr/sbin/nologin appuser
+
+# Bring in only the installed venv (no build tools ship in the final image)
+COPY --from=builder /opt/venv /opt/venv
+
+# serving entrypoint/module if it differs from src/serve.py
+COPY src/ ./src/
+COPY configs/ ./configs/
+
+RUN chown -R appuser:app /app
+
+USER appuser
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+# Update the module path if your serving script lives elsewhere.
+ENTRYPOINT ["uvicorn", "src.serve:app", "--host", "0.0.0.0", "--port", "8080"]
