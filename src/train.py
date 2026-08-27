@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -32,21 +33,22 @@ def load_config(config_path: str) -> dict:
 
 
 def resolve_config_path(cli_path: str | None = None) -> Path:
-    if cli_path:
-        path = Path(cli_path)
+    config_path = cli_path or os.getenv("TRAINING_CONFIG")
+    if config_path:
+        path = Path(config_path)
         if not path.is_absolute():
             if (Path.cwd() / path).exists():
                 path = Path.cwd() / path
             elif (ROOT / path).exists():
                 path = ROOT / path
         if not path.exists():
-            raise FileNotFoundError(f"Config not found: {cli_path}")
+            raise FileNotFoundError(f"Config not found: {config_path}")
         return path.resolve()
     for candidate in (Path("/app/configs/training_config.yaml"), ROOT / "configs" / "training_config.yaml"):
         if candidate.exists():
             return candidate
     raise FileNotFoundError(
-        "Could not find configs/training_config.yaml. Pass --config PATH."
+        "Could not find a training config. Set TRAINING_CONFIG or pass --config PATH."
     )
 
 
@@ -143,7 +145,11 @@ def save_checkpoint(
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Train an image classifier.")
-    parser.add_argument("--config", default=None, help="Path to training_config.yaml")
+    parser.add_argument(
+        "--config",
+        default=None,
+        help="Path to training_config.yaml (overrides TRAINING_CONFIG)",
+    )
     parser.add_argument("--epochs", type=int, default=None, help="Override training.epochs")
     parser.add_argument(
         "--max-batches",
