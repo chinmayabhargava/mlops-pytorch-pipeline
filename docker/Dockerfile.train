@@ -1,0 +1,53 @@
+# syntax=docker/dockerfile:1
+
+########################################
+# Stage 1: Base — shared/build dependencies
+########################################
+FROM python:3.11-slim AS base
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /app
+
+# build-essential is needed to build wheels for some ML libs (e.g. numpy/scipy
+# extensions) on slim images; removed layers are not kept since this is a
+# base stage consumed only by the training stage below.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements/train.txt .
+RUN pip install --no-cache-dir -r train.txt
+
+########################################
+# Stage 2: Training runtime
+########################################
+FROM base AS training
+
+# Run as non-root
+RUN useradd --create-home --shell /usr/sbin/nologin trainer
+
+COPY src/ ./src/
+COPY configs/ ./configs/
+
+ENV PYTHONUNBUFFERED=1 \
+    # Default config path baked into the image. Override at runtime with
+    # `-e CONFIG_PATH=/app/configs/<other>.yaml`, or replace the whole
+    # configs/ directory by mounting a volume over it, e.g.:
+    #   docker run -v $(pwd)/configs:/app/configs -e CONFIG_PATH=/app/configs/prod.yaml ...
+    # src/train.py must read CONFIG_PATH (falling back to this default)
+    # rather than hardcoding a config file.
+    CONFIG_PATH=/app/configs/train.yaml
+
+# Writable dirs for checkpoints/logs — mount host paths over these to
+# persist artifacts outside the container, e.g.:
+#   docker run -v $(pwd)/checkpoints:/app/checkpoints ...
+RUN mkdir -p /app/outputs /app/checkpoints && \
+    chown -R trainer:trainer /app
+
+USER trainer
+
+ENTRYPOINT ["python", "src/train.py"]
