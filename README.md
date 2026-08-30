@@ -62,7 +62,6 @@ mlops-pytorch-pipeline/
 │   ├── model.py
 │   ├── serve.py
 │   ├── train.py
-│   └── Todo.txt
 ├── tests/
 │   └── test_model.py
 ├── README.md
