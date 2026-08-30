@@ -1,11 +1,34 @@
-# Stage 1: Base with dependencies
+# syntax=docker/dockerfile:1.7
+
 FROM python:3.11-slim AS base
-WORKDIR /app
-COPY requirements/train.txt .
-RUN pip install --no-cache-dir -r train.txt
-# Stage 2: Training runtime
-FROM base AS training
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    APP_HOME=/app \
+    TRAIN_CONFIG=/app/configs/training_config.yaml
+
+WORKDIR ${APP_HOME}
+
+COPY requirements/train.txt ./requirements/train.txt
+RUN python -m pip install --upgrade pip setuptools wheel && \
+    python -m pip install --no-cache-dir -r ./requirements/train.txt
+
+FROM python:3.11-slim AS training
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    APP_HOME=/app \
+    TRAIN_CONFIG=/app/configs/training_config.yaml
+
+WORKDIR ${APP_HOME}
+
+COPY --from=base /usr/local /usr/local
 COPY src/ ./src/
 COPY configs/ ./configs/
-ENV PYTHONUNBUFFERED=1
-ENTRYPOINT ["python", "src/train.py"]
+
+RUN chmod -R a+rX /app
+
+# Mount a config file at /app/configs/training_config.yaml or override it with TRAIN_CONFIG.
+ENTRYPOINT ["sh", "-c", "exec python src/train.py --config ${TRAIN_CONFIG:-/app/configs/training_config.yaml}"]
