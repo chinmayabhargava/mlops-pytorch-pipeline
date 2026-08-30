@@ -1,22 +1,51 @@
-FROM python:3.11-slim AS builder
-WORKDIR /app
-COPY requirements/train.txt .
-RUN python -m pip install --no-cache-dir --prefix=/install -r train.txt
+# syntax=docker/dockerfile:1.7
 
+########################################
+# Stage 1: Base build image
+########################################
+FROM python:3.11-slim AS base
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    APP_HOME=/app \
+    TRAIN_CONFIG=/app/configs/training_config.yaml
+
+WORKDIR ${APP_HOME}
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements/train.txt ./requirements/train.txt
+RUN python -m pip install --upgrade pip setuptools wheel && \
+    python -m pip install --no-cache-dir -r ./requirements/train.txt
+
+########################################
+# Stage 2: Training runtime
+########################################
 FROM python:3.11-slim AS training
-WORKDIR /app
 
-COPY --from=builder /install /usr/local
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    APP_HOME=/app \
+    TRAIN_CONFIG=/app/configs/training_config.yaml
+
+WORKDIR ${APP_HOME}
+
+COPY --from=base /usr/local /usr/local
 COPY src/ ./src/
+COPY configs/ ./configs/
 
-ENV PYTHONUNBUFFERED=1
-ENV TRAINING_CONFIG=/config/training_config.yaml
-
-RUN useradd --create-home --uid 10001 trainer \
-	&& mkdir -p /config /app/data /app/checkpoints \
-	&& chown -R trainer:trainer /app /config
+RUN useradd --create-home --shell /usr/sbin/nologin trainer && \
+    mkdir -p /app/checkpoints && \
+    chown -R trainer:trainer /app
 
 USER trainer
-VOLUME ["/config", "/app/data", "/app/checkpoints"]
 
-ENTRYPOINT ["python", "src/train.py"]
+# Mount a config file into /app/configs/training_config.yaml or override via
+# TRAIN_CONFIG at runtime, for example:
+#   docker run -v ${PWD}/configs:/app/configs ...
+#   docker run -e TRAIN_CONFIG=/mnt/custom/train.yaml ...
+ENTRYPOINT ["sh", "-c", "exec python src/train.py --config \"${TRAIN_CONFIG:-/app/configs/training_config.yaml}\""]

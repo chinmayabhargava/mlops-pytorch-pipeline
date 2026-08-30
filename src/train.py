@@ -33,22 +33,37 @@ def load_config(config_path: str) -> dict:
 
 
 def resolve_config_path(cli_path: str | None = None) -> Path:
+<<<<<<< HEAD
     config_path = cli_path or os.getenv("TRAINING_CONFIG")
     if config_path:
         path = Path(config_path)
+=======
+    env_path = os.getenv("TRAIN_CONFIG")
+    config_source = cli_path or env_path
+    if config_source:
+        path = Path(config_source)
+>>>>>>> 0ca66771b9d42f50654254a84982ae5a7b479f7c
         if not path.is_absolute():
             if (Path.cwd() / path).exists():
                 path = Path.cwd() / path
             elif (ROOT / path).exists():
                 path = ROOT / path
         if not path.exists():
+<<<<<<< HEAD
             raise FileNotFoundError(f"Config not found: {config_path}")
+=======
+            raise FileNotFoundError(f"Config not found: {config_source}")
+>>>>>>> 0ca66771b9d42f50654254a84982ae5a7b479f7c
         return path.resolve()
     for candidate in (Path("/app/configs/training_config.yaml"), ROOT / "configs" / "training_config.yaml"):
         if candidate.exists():
             return candidate
     raise FileNotFoundError(
+<<<<<<< HEAD
         "Could not find a training config. Set TRAINING_CONFIG or pass --config PATH."
+=======
+        "Could not find configs/training_config.yaml. Pass --config PATH or set TRAIN_CONFIG."
+>>>>>>> 0ca66771b9d42f50654254a84982ae5a7b479f7c
     )
 
 
