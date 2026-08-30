@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -32,21 +33,23 @@ def load_config(config_path: str) -> dict:
 
 
 def resolve_config_path(cli_path: str | None = None) -> Path:
-    if cli_path:
-        path = Path(cli_path)
+    env_path = os.getenv("TRAIN_CONFIG")
+    config_source = cli_path or env_path
+    if config_source:
+        path = Path(config_source)
         if not path.is_absolute():
             if (Path.cwd() / path).exists():
                 path = Path.cwd() / path
             elif (ROOT / path).exists():
                 path = ROOT / path
         if not path.exists():
-            raise FileNotFoundError(f"Config not found: {cli_path}")
+            raise FileNotFoundError(f"Config not found: {config_source}")
         return path.resolve()
     for candidate in (Path("/app/configs/training_config.yaml"), ROOT / "configs" / "training_config.yaml"):
         if candidate.exists():
             return candidate
     raise FileNotFoundError(
-        "Could not find configs/training_config.yaml. Pass --config PATH."
+        "Could not find configs/training_config.yaml. Pass --config PATH or set TRAIN_CONFIG."
     )
 
 
